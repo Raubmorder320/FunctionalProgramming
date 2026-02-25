@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <title>Умный Рекомендатор Книг</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* Стили для удобного списка с чекбоксами */
+        .checkbox-scroll {
+            max-height: 180px;
+            overflow-y: auto;
+            border: 1px solid #444;
+            border-radius: 5px;
+            padding: 10px;
+            background-color: #2b2f32;
+        }
+        .form-check-label {
+            cursor: pointer;
+            width: 100%;
+        }
+        .form-check:hover {
+            background-color: #3b4045;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="bg-body-tertiary">
+<div class="container py-5">
+    <h1 class="mb-4 text-center text-primary">📚 Рекомендательная система</h1>
+    
+    <div class="row">
+        <!-- Форма -->
+        <div class="col-md-4">
+            <div class="card shadow-sm mb-4 border-0">
+                <div class="card-header bg-primary text-white fw-bold">Настройки предпочтений</div>
+                <div class="card-body bg-dark">
+                    <form action="/" method="POST">
+                        
+                        <!-- ЖАНРЫ -->
+                        <div class="mb-3">
+                            <label class="form-label text-light">Любимые жанры</label>
+                            <div class="checkbox-scroll">
+                                {% for genre in genres %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="genres" value="{{ genre }}" id="g_{{ loop.index }}"
+                                    {% if genre in state.genres %} checked {% endif %}>
+                                    <label class="form-check-label text-light" for="g_{{ loop.index }}">
+                                        {{ genre }}
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <!-- ТЗ: Строгий фильтр жанров -->
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" name="strict_genre" id="strict_genre"
+                                {% if state.strict_genre %} checked {% endif %}>
+                                <label class="form-check-label text-warning small" for="strict_genre" title="Отсечь книги других жанров, даже если совпал автор">
+                                    Исключить книги других жанров
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- АВТОРЫ -->
+                        <div class="mb-3">
+                            <label class="form-label text-light">Любимые авторы</label>
+                            <div class="checkbox-scroll">
+                                {% for author in authors %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="authors" value="{{ author }}" id="a_{{ loop.index }}"
+                                    {% if author in state.authors %} checked {% endif %}>
+                                    <label class="form-check-label text-light" for="a_{{ loop.index }}">
+                                        {{ author }}
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <!-- КЛЮЧЕВЫЕ СЛОВА -->
+                        <div class="mb-3">
+                            <label class="form-label text-light">Ключевые слова (через запятую)</label>
+                            <input type="text" name="keywords" class="form-control bg-secondary text-white border-secondary" 
+                                   placeholder="детектив, космос, магия" value="{{ state.keywords }}">
+                        </div>
+
+                        <!-- ГОД ИЗДАНИЯ -->
+                        <div class="mb-3">
+                            <label class="form-label text-light">Год публикации (не старее чем)</label>
+                            <input type="number" name="year" class="form-control bg-secondary text-white border-secondary" 
+                                   placeholder="Например: 1950" value="{{ state.year }}">
+                        </div>
+
+                        <!-- СОРТИРОВКА -->
+                        <div class="mb-4">
+                            <label class="form-label text-light">Сортировка</label>
+                            <select name="sort_by" class="form-select bg-secondary text-white border-secondary">
+                                <option value="score" {% if state.sort_by == 'score' %}selected{% endif %}>По рейтингу совпадения</option>
+                                <option value="alphabet" {% if state.sort_by == 'alphabet' %}selected{% endif %}>По алфавиту (А-Я)</option>
+                                <option value="year" {% if state.sort_by == 'year' %}selected{% endif %}>По году издания (новые)</option>
+                            </select>
+                        </div>
+
+                        <button type="submit" class="btn btn-success w-100 fw-bold">Подобрать книги</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Результаты -->
+        <div class="col-md-8">
+            {% if results != None %}
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h3 class="text-light">Результаты: {{ results|length }} шт.</h3>
+                <div>
+                    <button class="btn btn-outline-info btn-sm" onclick="exportData('json')">Сохранить JSON</button>
+                    <button class="btn btn-outline-info btn-sm" onclick="exportData('csv')">Сохранить CSV</button>
+                </div>
+            </div>
+
+            {% if results|length == 0 %}
+            <div class="alert alert-warning">Книги по вашему запросу не найдены. Попробуйте убрать лишние галочки.</div>
+            {% else %}
+            <div class="table-responsive" style="max-height: 80vh; overflow-y: auto;">
+                <table class="table table-dark table-hover border-secondary align-middle">
+                    <thead class="table-secondary" style="position: sticky; top: 0; z-index: 1;">
+                        <tr>
+                            <th><input type="checkbox" id="selectAll" onclick="toggleAll()"></th>
+                            <th>⭐️</th>
+                            <th>Название</th>
+                            <th>Автор</th>
+                            <th>Жанр</th>
+                            <th>Год</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for book in results %}
+                        <tr>
+                            <td><input type="checkbox" class="book-cb form-check-input" data-book='{{ book|tojson }}'></td>
+                            <td class="text-success fw-bold">{% if book.score > 0 %}+{{ book.score }}{% else %}0{% endif %}</td>
+                            <td><strong>{{ book.title }}</strong></td>
+                            <td class="text-muted">{{ book.author | join(', ') }}</td>
+                            <td><span class="badge bg-primary">{{ book.genre }}</span></td>
+                            <td>{{ book.first_publish_year }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="alert alert-secondary mt-5 text-center p-5">
+                <h4>Добро пожаловать!</h4>
+                <p>Выберите интересующие вас жанры и авторов слева, чтобы мы могли собрать для вас идеальный список на вечер.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleAll() {
+        const selectAll = document.getElementById('selectAll');
+        const checkboxes = document.querySelectorAll('.book-cb');
+        checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    }
+
+    function exportData(format) {
+        const checkboxes = document.querySelectorAll('.book-cb:checked');
+        if (checkboxes.length === 0) {
+            alert('Сначала отметьте галочками книги, которые хотите сохранить!');
+            return;
+        }
+
+        const selectedBooks = Array.from(checkboxes).map(cb => JSON.parse(cb.getAttribute('data-book')));
+        let content, mime, filename;
+
+        if (format === 'json') {
+            content = JSON.stringify(selectedBooks, null, 4);
+            mime = 'application/json';
+            filename = 'my_reading_list.json';
+        } else if (format === 'csv') {
+            const headers = ['Название', 'Автор', 'Жанр', 'Год', 'Рейтинг'];
+            const rows = selectedBooks.map(b => 
+                `"${b.title}","${b.author.join('; ')}","${b.genre}","${b.first_publish_year}","${b.score}"`
+            );
+            content = '\uFEFF' + [headers.join(',')].concat(rows).join('\n'); // \uFEFF - это BOM для нормальной кодировки Excel
+            mime = 'text/csv;charset=utf-8;';
+            filename = 'my_reading_list.csv';
+        }
+
+        const blob = new Blob([content], { type: mime });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+    }
+</script>
+</body>
+</html>
